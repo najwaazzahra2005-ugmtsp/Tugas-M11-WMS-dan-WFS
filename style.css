@@ -1,0 +1,160 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  font-family: Arial, sans-serif;
+}
+
+#map {
+  width: 100%;
+  height: 100vh;
+}
+
+.toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: white;
+  padding: 10px;
+  z-index: 1000;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.popup {
+  position: absolute;
+  background: white;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  min-width: 180px;
+}
+// =============================
+// BASEMAP
+// =============================
+const osm = new ol.layer.Tile({
+  source: new ol.source.OSM()
+});
+
+// =============================
+// WMS LAYER
+// =============================
+const wmsLayer = new ol.layer.Tile({
+  source: new ol.source.TileWMS({
+    url: 'https://ahocevar.com/geoserver/wms',
+    params: {
+      'LAYERS': 'topp:states',
+      'TILED': true
+    },
+     serverType: 'geoserver'
+  }),
+  visible: true
+});
+
+// =============================
+// WFS SOURCE
+// =============================
+const wfsSource = new ol.source.Vector({
+  format: new ol.format.GeoJSON(),
+  url: function(extent) {
+    return (
+      'https://ahocevar.com/geoserver/wfs?' +
+      'service=WFS&' +
+      'version=1.1.0&' +
+      'request=GetFeature&' +
+      'typename=topp:states&' +
+      'outputFormat=application/json&' +
+      'srsname=EPSG:3857&' +
+      'bbox=' + extent.join(',') + ',EPSG:3857'
+    );
+  },
+  strategy: ol.loadingstrategy.bbox
+});
+
+// =============================
+// STYLE WFS
+// =============================
+const wfsLayer = new ol.layer.Vector({
+  source: wfsSource,
+  visible: true,
+  style: new ol.style.Style({
+    stroke: new ol.style.Stroke({
+      color: 'blue',
+      width: 2
+    }),
+    fill: new ol.style.Fill({
+      color: 'rgba(0,0,255,0.1)'
+    })
+     })
+});
+
+// =============================
+// MAP
+// =============================
+const map = new ol.Map({
+  target: 'map',
+  layers: [osm, wmsLayer, wfsLayer],
+  view: new ol.View({
+    center: ol.proj.fromLonLat([-100, 40]),
+    zoom: 4
+  })
+});
+
+// =============================
+// TOGGLE LAYER
+// =============================
+document.getElementById('toggleWMS').addEventListener('change', function() {
+  wmsLayer.setVisible(this.checked);
+  });
+
+
+document.getElementById('toggleWFS').addEventListener('change', function() {
+  wfsLayer.setVisible(this.checked);
+});
+
+// =============================
+// POPUP WFS
+// =============================
+const popup = document.getElementById('popup');
+
+map.on('singleclick', function(evt) {
+
+  popup.style.display = 'none';
+
+  map.forEachFeatureAtPixel(evt.pixel, function(feature) {
+
+    const props = feature.getProperties();
+
+    popup.innerHTML = `
+      <b>Nama:</b> ${props.STATE_NAME || '-'} <br>
+      <b>Populasi:</b> ${props.PERSONS || '-'}
+    `;
+
+    popup.style.left = evt.pixel[0] + 'px';
+    popup.style.top = evt.pixel[1] + 'px';
+    popup.style.display = 'block';
+  });
+
+  // =============================
+  // BONUS: GETFEATUREINFO WMS
+  // =============================
+  const viewResolution = map.getView().getResolution();
+
+  const url = wmsLayer.getSource().getFeatureInfoUrl(
+    evt.coordinate,
+    viewResolution,
+    'EPSG:3857',
+    {
+      'INFO_FORMAT': 'application/json'
+       }
+  );
+
+  if (url) {
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        console.log('GetFeatureInfo:', data);
+      });
+  }
+});
